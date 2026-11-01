@@ -93,6 +93,7 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 14px; text-align: center; padding: 24px;
     backdrop-filter: blur(3px);
+    overflow-y: auto;
   }
   #overlay h2 { font-size: 26px; }
   #overlay p { color: var(--muted); max-width: 460px; line-height: 1.65; font-size: 14px; }
@@ -102,6 +103,22 @@
   #flash {
     position: absolute; inset: 0; pointer-events: none; opacity: 0;
     transition: opacity .35s;
+  }
+
+  /* Мобильные экраны: сцена выше, оверлей прокручивается */
+  @media (max-width: 640px) {
+    h1 { font-size: 16px; }
+    #stageWrap canvas { height: 62vh; min-height: 380px; }
+    #overlay { justify-content: flex-start; padding: 16px; gap: 10px; }
+    #overlay h2 { font-size: 19px; margin-top: 4px; }
+    #overlay p { font-size: 13px; line-height: 1.55; }
+    #overlay .big { font-size: 30px; }
+    #btnStart { padding: 12px 28px; font-size: 15px; }
+    .card { min-width: 90px; padding: 6px 8px; }
+    .card .value { font-size: 16px; }
+    button { padding: 12px 16px; font-size: 14px; }
+    kbd { display: none; } /* на телефоне клавиш нет — не путаем */
+    .hint { font-size: 11.5px; }
   }
 </style>
 </head>
