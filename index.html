@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Симулятор проверки пружин на отклонение от вертикали</title>
+<style>
+  :root {
+    --bg: #10141c;
+    --panel: #1a2030;
+    --accent: #4da3ff;
+    --ok: #3ddc84;
+    --bad: #ff5d5d;
+    --text: #e8edf5;
+    --muted: #8a94a8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #1c2434, var(--bg));
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    user-select: none;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; letter-spacing: .3px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+
+  #hud {
+    width: 720px; max-width: 96vw;
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid #2a3348;
+    border-radius: 10px;
+    padding: 8px 14px;
+    flex: 1; min-width: 110px;
+    text-align: center;
+  }
+  .card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .card .value { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  #tolVal { color: var(--accent); }
+
+  #stageWrap {
+    position: relative;
+    width: 720px; max-width: 96vw;
+    background: linear-gradient(#141a26, #0d1119);
+    border: 1px solid #2a3348;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  canvas { display: block; width: 100%; height: auto; }
+
+  #timerBar {
+    position: absolute; left: 0; top: 0; height: 4px;
+    background: var(--accent);
+    width: 100%;
+    transition: width .05s linear;
+  }
+
+  #controls {
+    display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; justify-content: center;
+  }
+  button {
+    font: inherit; font-weight: 600; font-size: 15px;
+    border: none; border-radius: 10px;
+    padding: 12px 26px; cursor: pointer;
+    color: #0b0e14;
+    transition: transform .08s, filter .15s;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:active { transform: scale(.96); }
+  #btnOk { background: var(--ok); }
+  #btnBad { background: var(--bad); color: #fff; }
+  #btnMeter { background: #2c3a57; color: var(--text); }
+  #btnStart { background: var(--accent); color: #06121f; padding: 14px 40px; font-size: 17px; }
+  button:disabled { opacity: .35; cursor: default; }
+
+  .hint { margin-top: 10px; color: var(--muted); font-size: 12.5px; text-align: center; line-height: 1.6; }
+  kbd {
+    background: #232c40; border: 1px solid #37425e; border-bottom-width: 2px;
+    border-radius: 5px; padding: 1px 7px; font-size: 12px; font-family: inherit;
+  }
+
+  #overlay {
+    position: absolute; inset: 0;
+    background: rgba(10, 13, 20, .88);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; text-align: center; padding: 24px;
+    backdrop-filter: blur(3px);
+  }
+  #overlay h2 { font-size: 26px; }
+  #overlay p { color: var(--muted); max-width: 460px; line-height: 1.65; font-size: 14px; }
+  #overlay .big { font-size: 40px; font-weight: 800; color: var(--accent); }
+  .hidden { display: none !important; }
+
+  #flash {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    transition: opacity .35s;
+  }
+</style>
+</head>
+<body>
+
+<h1>🔩 ОТК: проверка пружин на отклонение от вертикали</h1>
+<div class="sub">Симулятор контролёра качества — конвейер не ждёт!</div>
+
+<div id="hud">
+  <div class="card"><div class="label">Уровень</div><div class="value" id="lvlVal">1</div></div>
+  <div class="card"><div class="label">Очки</div><div class="value" id="scoreVal">0</div></div>
+  <div class="card"><div class="label">Серия</div><div class="value" id="streakVal">0</div></div>
+  <div class="card"><div class="label">Допуск</div><div class="value" id="tolVal">±2.5°</div></div>
+  <div class="card"><div class="label">Ошибки</div><div class="value" id="errVal">0 / 3</div></div>
+  <div class="card"><div class="label">Инклинометр</div><div class="value" id="meterVal">3</div></div>
+</div>
+
+<div id="stageWrap">
+  <div id="timerBar"></div>
+  <canvas id="cv" width="720" height="440"></canvas>
+  <div id="flash"></div>
+
+  <div id="overlay">
+    <h2>Симулятор проверки пружин</h2>
+    <p>
+      На стенд подаются пружины. Определите, укладывается ли ось пружины
+      в допуск по вертикали (показан зелёной зоной).<br><br>
+      <b style="color:var(--ok)">Годна</b> — отклонение в пределах допуска ·
+      <b style="color:var(--bad)">Брак</b> — за пределами.<br>
+      Если не уверены — используйте цифровой инклинометр (запас ограничен).<br><br>
+      3 ошибки — смена окончена. С каждым уровнем допуск жёстче, а время меньше.
+    </p>
+    <button id="btnStart">Начать смену ▶</button>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="btnBad" disabled>✖ Брак&nbsp;&nbsp;<kbd>←</kbd></button>
+  <button id="btnMeter" disabled>📐 Инклинометр&nbsp;&nbsp;<kbd>I</kbd></button>
+  <button id="btnOk" disabled>✔ Годна&nbsp;&nbsp;<kbd>→</kbd></button>
+</div>
+
+<div class="hint">
+  Управление: <kbd>←</kbd> брак · <kbd>→</kbd> годна · <kbd>I</kbd> инклинометр (показывает точный угол)<br>
+  Просроченная пружина засчитывается как ошибка.
+</div>
+
+<script>
+(() => {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  const $ = id => document.getElementById(id);
+  const ui = {
+    lvl: $('lvlVal'), score: $('scoreVal'), streak: $('streakVal'),
+    tol: $('tolVal'), err: $('errVal'), meter: $('meterVal'),
+    timer: $('timerBar'), overlay: $('overlay'), flash: $('flash'),
+    btnOk: $('btnOk'), btnBad: $('btnBad'), btnMeter: $('btnMeter')
+  };
+
+  const BASE_Y = 380;           // ось вращения — основание
+  const CX = W / 2;
+  const SPRING_H = 250;
+  const SPRING_R = 46;
+  const COILS = 7;
+
+  let state = 'idle';           // idle | judging | feedback
+  let level, score, streak, errors, meterUses;
+  let angleDeg = 0, isGood = true, tolerance = 2.5;
+  let timeLimit = 8000, timeLeft = 0, lastTs = 0;
+  let settleT = 0;              // анимация «оседания» пружины
+  let swayPhase = Math.random() * 1000;
+  let meterTimer = 0;           // сколько ещё показывать показания
+  let checked = 0, correct = 0, bestStreak = 0;
+
+  function levelParams(lvl) {
+    tolerance = Math.max(1.0, 2.5 - (lvl - 1) * 0.3);
+    timeLimit = Math.max(3500, 8000 - (lvl - 1) * 700);
+  }
+
+  function nextSpring() {
+    levelParams(level);
+    // угол: иногда явно в допуске, иногда пограничный, иногда явный брак
+    const r = Math.random();
+    let a;
+    if (r < 0.35)      a = (Math.random() * 2 - 1) * tolerance * 0.7;                 // явно годна
+    else if (r < 0.70) a = (Math.random() * 2 - 1) * (tolerance + 1.6);               // пограничная
+    else               a = (tolerance + 0.6) + Math.random() * 3.2 * (Math.random() < .5 ? -1 : 1) * 0 + (tolerance + 0.6 + Math.random() * 3) * (Math.random() < .5 ? -1 : 1); // брак
+    angleDeg = Math.max(-7, Math.min(7, a));
+    isGood = Math.abs(angleDeg) <= tolerance;
+    timeLeft = timeLimit;
+    settleT = 0;
+    meterTimer = 0;
+    state = 'judging';
+    setButtons(true);
+    ui.tol.textContent = '±' + tolerance.toFixed(1) + '°';
+  }
+
+  function setButtons(on) {
+    ui.btnOk.disabled = !on;
+    ui.btnBad.disabled = !on;
+    ui.btnMeter.disabled = !on || meterUses <= 0;
+  }
+
+  function judge(sayGood) {
+    if (state !== 'judging') return;
+    state = 'feedback';
+    setButtons(false);
+    checked++;
+    const right = sayGood === isGood;
+    if (right) {
+      correct++;
+      streak++;
+      bestStreak = Math.max(bestStreak, streak);
+      const bonus = Math.min(streak, 10);
+      score += 10 + bonus;
+      flash('rgba(61,220,132,.25)');
+    } else {
+      streak = 0;
+      errors++;
+      flash('rgba(255,93,93,.3)');
+    }
+    if (checked % 8 === 0 && errors < 3) {
+      level++;
+      meterUses = Math.min(meterUses + 2, 5);
+    }
+    syncHud();
+    meterTimer = 1.6; // показать истинный угол после решения
+    setTimeout(() => {
+      if (errors >= 3) return gameOver();
+      nextSpring();
+    }, 1100);
+  }
+
+  function timeoutMiss() {
+    state = 'feedback';
+    setButtons(false);
+    checked++;
+    errors++;
+    streak = 0;
+    flash('rgba(255,180,60,.3)');
+    syncHud();
+    meterTimer = 1.6;
+    setTimeout(() => {
+      if (errors >= 3) return gameOver();
+      nextSpring();
+    }, 1100);
+  }
+
+  function flash(color) {
+    ui.flash.style.background = color;
+    ui.flash.style.opacity = 1;
+    setTimeout(() => ui.flash.style.opacity = 0, 60);
+  }
+
+  function syncHud() {
+    ui.lvl.textContent = level;
+    ui.score.textContent = score;
+    ui.streak.textContent = streak;
+    ui.err.textContent = errors + ' / 3';
+    ui.meter.textContent = meterUses;
+  }
+
+  function gameOver() {
+    state = 'idle';
+    const acc = checked ? Math.round(100 * correct / checked) : 0;
+    ui.overlay.innerHTML = `
+      <h2>Смена окончена</h2>
+      <div class="big">${score} очков</div>
+      <p>Проверено пружин: <b>${checked}</b> · Точность: <b>${acc}%</b> ·
+         Лучшая серия: <b>${bestStreak}</b> · Достигнут уровень: <b>${level}</b>
+         (допуск ±${tolerance.toFixed(1)}°)</p>
+      <button id="btnStart">Ещё одна смена ▶</button>`;
+    ui.overlay.classList.remove('hidden');
+    $('btnStart').addEventListener('click', startGame);
+  }
+
+  function startGame() {
+    level = 1; score = 0; streak = 0; errors = 0; meterUses = 3;
+    checked = 0; correct = 0; bestStreak = 0;
+    ui.overlay.classList.add('hidden');
+    syncHud();
+    nextSpring();
+  }
+
+  function useMeter() {
+    if (state !== 'judging' || meterUses <= 0 || meterTimer > 0) return;
+    meterUses--;
+    meterTimer = 2.2;
+    ui.meter.textContent = meterUses;
+    ui.btnMeter.disabled = true;
+  }
+
+  // ---------- Рендер ----------
+  function drawScene(ts) {
+    ctx.clearRect(0, 0, W, H);
+
+    // конвейер / пол
+    ctx.fillStyle = '#161c2a';
+    ctx.fillRect(0, BASE_Y + 14, W, H - BASE_Y);
+    ctx.strokeStyle = '#2a3348';
+    ctx.beginPath(); ctx.moveTo(0, BASE_Y + 14); ctx.lineTo(W, BASE_Y + 14); ctx.stroke();
+
+    // вертикальная ось-отвес (пунктир)
+    ctx.save();
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = 'rgba(120,140,180,.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(CX, 40); ctx.lineTo(CX, BASE_Y + 14); ctx.stroke();
+    ctx.restore();
+
+    // зона допуска (зелёный коридор)
+    const tolRad = tolerance * Math.PI / 180;
+    ctx.save();
+    ctx.translate(CX, BASE_Y);
+    ctx.fillStyle = 'rgba(61,220,132,.07)';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.sin(-tolRad) * (SPRING_H + 30), -Math.cos(-tolRad) * (SPRING_H + 30));
+    ctx.lineTo(Math.sin(tolRad) * (SPRING_H + 30), -Math.cos(tolRad) * (SPRING_H + 30));
+    ctx.closePath(); ctx.fill();
+    ctx.setLineDash([4, 5]);
+    ctx.strokeStyle = 'rgba(61,220,132,.35)';
+    [-1, 1].forEach(s => {
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      ctx.lineTo(Math.sin(s * tolRad) * (SPRING_H + 30), -Math.cos(s * tolRad) * (SPRING_H + 30));
+      ctx.stroke();
+    });
+    ctx.restore();
+
+    // текущий угол с «оседанием» и лёгким покачиванием
+    let shown = angleDeg;
+    if (settleT < 1) {
+      const damp = Math.exp(-settleT * 5);
+      shown = angleDeg * (1 - damp) + angleDeg * 0.55 * damp * Math.cos(settleT * 18);
+    }
+    shown += Math.sin(ts / 1400 + swayPhase) * 0.15; // микроколебание
+
+    drawStand();
+    drawSpring(shown * Math.PI / 180);
+
+    // показания инклинометра / истинный угол после решения
+    if (meterTimer > 0) {
+      const a = Math.abs(angleDeg).toFixed(2);
+      const sign = angleDeg >= 0 ? '+' : '−';
+      const col = isGood ? 'var(--ok)' : 'var(--bad)';
+      ctx.save();
+      ctx.fillStyle = 'rgba(20,26,40,.92)';
+      ctx.strokeStyle = isGood ? '#3ddc84' : '#ff5d5d';
+      ctx.lineWidth = 2;
+      roundRect(ctx, CX - 110, 52, 220, 54, 10);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = isGood ? '#3ddc84' : '#ff5d5d';
+      ctx.font = '700 24px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${sign}${a}°`, CX, 78);
+      ctx.font = '12px "Segoe UI", sans-serif';
+      ctx.fillStyle = '#8a94a8';
+      ctx.fillText(isGood ? 'в пределах допуска' : 'ОТКЛОНЕНИЕ ЗА ДОПУСКОМ', CX, 97);
+      ctx.restore();
+    }
+
+    // шкала угломера по дуге
+    drawProtractor();
+  }
+
+  function drawStand() {
+    ctx.save();
+    ctx.fillStyle = '#232c40';
+    ctx.strokeStyle = '#37425e';
+    ctx.lineWidth = 2;
+    roundRect(ctx, CX - 90, BASE_Y, 180, 16, 5);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#1a2030';
+    roundRect(ctx, CX - 110, BASE_Y + 16, 220, 10, 4);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSpring(tilt) {
+    ctx.save();
+    ctx.translate(CX, BASE_Y);
+    ctx.rotate(tilt);
+
+    const n = COILS, step = SPRING_H / n;
+    // тень под пружиной
+    ctx.save();
+    ctx.rotate(-tilt);
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath();
+    ctx.ellipse(Math.sin(tilt) * 20, 10, SPRING_R + 14, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    for (let i = n; i >= 0; i--) {
+      const y = -i * step - 6;
+      const squeeze = 1 - i * 0.015;          // лёгкое сужение к верху
+      const rx = SPRING_R * squeeze, ry = rx * 0.32;
+      const grad = ctx.createLinearGradient(-rx, 0, rx, 0);
+      grad.addColorStop(0, '#5a86c8');
+      grad.addColorStop(0.5, '#a9c8f0');
+      grad.addColorStop(1, '#3d629e');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      // задняя дуга
+      ctx.beginPath();
+      ctx.ellipse(0, y, rx, ry, 0, Math.PI, Math.PI * 2);
+      ctx.globalAlpha = 0.55; ctx.stroke(); ctx.globalAlpha = 1;
+      // передняя дуга
+      ctx.beginPath();
+      ctx.ellipse(0, y, rx, ry, 0, 0, Math.PI);
+      ctx.stroke();
+    }
+
+    // верхняя шайба
+    ctx.fillStyle = '#6f8fc4';
+    ctx.beginPath();
+    ctx.ellipse(0, -SPRING_H - 6, SPRING_R * 0.85, SPRING_R * 0.85 * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawProtractor() {
+    ctx.save();
+    ctx.translate(CX, BASE_Y);
+    ctx.strokeStyle = 'rgba(120,140,180,.3)';
+    ctx.fillStyle = 'rgba(138,148,168,.7)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    for (let d = -6; d <= 6; d += 2) {
+      const r = d * Math.PI / 180, L = SPRING_H + 24;
+      const x = Math.sin(r) * L, y = -Math.cos(r) * L;
+      ctx.beginPath(); ctx.moveTo(Math.sin(r) * (L - 8), -Math.cos(r) * (L - 8)); ctx.lineTo(x, y); ctx.stroke();
+      ctx.fillText(d + '°', Math.sin(r) * (L + 14), -Math.cos(r) * (L + 14) + 3);
+    }
+    ctx.restore();
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  // ---------- Цикл ----------
+  function loop(ts) {
+    const dt = Math.min(50, ts - lastTs) / 1000;
+    lastTs = ts;
+
+    if (state === 'judging') {
+      settleT += dt;
+      timeLeft -= dt * 1000;
+      if (timeLeft <= 0) { timeLeft = 0; timeoutMiss(); }
+      ui.timer.style.width = (100 * timeLeft / timeLimit) + '%';
+      ui.timer.style.background = timeLeft / timeLimit > 0.35 ? 'var(--accent)' : 'var(--bad)';
+    } else if (state === 'feedback') {
+      ui.timer.style.width = '0%';
+    } else {
+      ui.timer.style.width = '100%';
+    }
+    if (meterTimer > 0) meterTimer -= dt;
+
+    drawScene(ts);
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- События ----------
+  ui.btnOk.addEventListener('click', () => judge(true));
+  ui.btnBad.addEventListener('click', () => judge(false));
+  ui.btnMeter.addEventListener('click', useMeter);
+  $('btnStart').addEventListener('click', startGame);
+
+  document.addEventListener('keydown', e => {
+    if (e.repeat) return;
+    if (e.key === 'ArrowRight') judge(true);
+    else if (e.key === 'ArrowLeft') judge(false);
+    else if (e.key.toLowerCase() === 'i' || e.key.toLowerCase() === 'ш') useMeter();
+    else if ((e.key === 'Enter' || e.key === ' ') && state === 'idle' && !ui.overlay.classList.contains('hidden')) {
+      const b = $('btnStart'); if (b) b.click();
+    }
+  });
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
